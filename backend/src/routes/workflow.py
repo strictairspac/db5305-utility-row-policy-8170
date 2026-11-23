@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 
 from src.config.settings import cache, engine
 from src.controllers.workflow import download
 from src.models.tables import audit, cases, evidence, runs
-from src.schemas.workflow import CaseForm, LoginForm, ReviewForm
-from src.services import domain, workflow
-from src.services.security import current_user, login, operator, reviewer
+from src.schemas.workflow import AckForm, CaseForm, LoginForm, ReviewForm
+from src.services import domain, handover, workflow
+from src.services.security import current_user, login, operator, reviewer, zone_lead
 
 router = APIRouter()
 
@@ -62,6 +62,30 @@ def export_evidence(identity: int, _=Depends(current_user)):
 @router.post('/evidence/{identity}/review')
 def review_evidence(identity: int, form: ReviewForm, actor=Depends(reviewer)):
     return workflow.review(identity, form.note, actor)
+
+
+@router.get('/rectifications/pending')
+def pending_rectifications(user=Depends(zone_lead)):
+    """领单：只返回本区未关闭派单，high_watermark 供断网恢复后校准续传游标。"""
+    return handover.pending(user['zone'])
+
+
+@router.get('/rectifications/feed')
+def rectification_feed(user=Depends(zone_lead), since: int = Query(0, ge=0)):
+    """续传：本区 seq 大于游标的交接事件；断网恢复后从本地 last_seq 接着补。"""
+    return handover.feed(user['zone'], since)
+
+
+@router.post('/rectifications/{dispatch_id}/ack')
+def ack_rectification(dispatch_id: int, form: AckForm, user=Depends(zone_lead)):
+    """回执：只认派单号 + 代次，旧代次的晚到回执确认不了新派单。"""
+    return handover.ack(dispatch_id, form.generation, user['zone'], user['sub'], form.note.strip())
+
+
+@router.get('/handovers')
+def list_handovers(_=Depends(current_user)):
+    """最近整改派单及其交接状态，证据页据此展示。"""
+    return handover.recent()
 
 
 @router.get('/audit')

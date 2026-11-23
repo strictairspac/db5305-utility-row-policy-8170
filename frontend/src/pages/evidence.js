@@ -1,12 +1,37 @@
 import {heading, panel} from '../components/common/heading.js';
 import {entries, records} from '../components/common/records.js';
+import {dispatchLabels} from '../constants/workflow.js';
 import {topic} from '../constants/project.js';
 import {date, el, esc} from '../utils/dom.js';
 import {submit} from '../hooks/submit.js';
 
+function zonePanel(state) {
+  if (state.session?.role!=='zone_lead' || !state.pending) return '';
+  const rows = state.pending.items.map(row=>[
+    `#${row.id}`, esc(row.order_id), esc(row.utility), esc(row.kind), row.generation, esc(date(row.opened_at)),
+    row.status==='open'
+      ? `<button type="button" data-ack="${row.id}" data-generation="${row.generation}">签收</button>`
+      : esc(dispatchLabels[row.status]||row.status)]);
+  const table = rows.length
+    ? records(['派单','工单','表计','差异','代次','开出时间','回执'], rows)
+    : '<p class="empty">本区当前没有待整改项。</p>';
+  return panel(`本区待整改（${esc(state.pending.zone)}）`, table
+    + `<p class="note">交接水位 ${esc(state.pending.high_watermark)}：断网恢复后先核对本页待办，再从本地游标起按交接事件序号补齐。</p>`);
+}
+
+function handoverPanel(state, current) {
+  const rows = (state.handovers||[]).filter(row=>row.source_evidence_id===current.id || row.closed_by_evidence_id===current.id);
+  if (!rows.length) return '';
+  return panel('交接状态', records(
+    ['派单','人员','工单','区域','差异','代次','状态','签收人','签收时间','撤下时间'],
+    rows.map(row=>[
+      `#${row.id}`, esc(row.operator_id), esc(row.order_id), esc(row.zone), esc(row.kind), row.generation,
+      esc(dispatchLabels[row.status]||row.status), esc(row.acked_by||'—'), esc(date(row.acked_at)), esc(date(row.closed_at))])));
+}
+
 export function evidencePage(state, identity) {
   const current = state.evidence.find(row=>row.id===identity) || state.evidence[0];
-  if (!current) return heading(topic.modules[3]) + '<p class="empty">执行完成后，可查看、复核和导出证据。</p>';
+  if (!current) return heading(topic.modules[3]) + zonePanel(state) + '<p class="empty">执行完成后，可查看、复核和导出证据。</p>';
   const {report} = current;
   const metrics = Object.entries(report.metrics).map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('');
   const sections = report.sections.map(x=>panel(x.title, entries(x.rows))).join('');
@@ -15,11 +40,20 @@ export function evidencePage(state, identity) {
     : '<p class="note">待复核员签署</p>';
   const history = state.evidence.map(row=>[`<a href="#evidence/${row.id}">执行 ${row.run_id}</a>`, esc(row.report.summary), esc(row.reviewer || '待复核')]);
   return `${heading(topic.modules[3], report.summary, `<button id="download" data-id="${current.id}">导出证据</button>`)}
+    ${zonePanel(state)}
     <div class="spread evidence-top"><dl class="metrics">${metrics}</dl><aside class="brief"><h2>复核签署</h2>${review}<details><summary>结果校验码</summary><code class="digest">${esc(current.digest)}</code></details></aside></div>
-    ${sections}<details><summary>历史证据</summary>${records(['执行','结论','复核'], history)}</details>`;
+    ${handoverPanel(state, current)}${sections}<details><summary>历史证据</summary>${records(['执行','结论','复核'], history)}</details>`;
 }
 
 export function bindEvidence(api, update, fail) {
+  document.querySelectorAll('[data-ack]').forEach(button=>{
+    button.addEventListener('click', async()=>{
+      try {
+        await api(`/rectifications/${button.dataset.ack}/ack`, {method:'POST', data:{generation:Number(button.dataset.generation)}});
+        await update();
+      } catch (error) { fail(error); }
+    });
+  });
   const button = document.getElementById('download');
   if (!button) return;
   const identity = button.dataset.id;

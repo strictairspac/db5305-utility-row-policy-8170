@@ -18,11 +18,17 @@ def keep_existing(conn, table, key, values):
     conn.execute(statement)
 
 
+ZONE_LEADS = {'lead-beizha': '北闸', 'lead-nandi': '南堤', 'lead-xigang': '西港'}
+
+
 def seed():
     with engine.begin() as conn:
-        for role in Role:
+        for role in (Role.OPERATOR, Role.REVIEWER, Role.VIEWER):
             keep_existing(conn, users, 'username', {'username': role.value, 'role': role.value,
                 'password_hash': hash_password('Demo-Walkthrough-2026')})
+        for username, zone in ZONE_LEADS.items():
+            keep_existing(conn, users, 'username', {'username': username, 'role': Role.ZONE_LEAD,
+                'zone': zone, 'password_hash': hash_password('Demo-Walkthrough-2026')})
         keep_existing(conn, cases, 'slug', {'slug': 'demo', 'title': SPEC['name'],
             'payload': SPEC['sample'], 'author': 'demo', 'created_at': utc_time()})
         return {table.name: conn.execute(select(func.count()).select_from(table)).scalar_one()

@@ -37,9 +37,11 @@ async function refresh() {
   const {key: page,id} = route();
   if (!pages[page]) { go('cases'); return; }
   try {
-    const result = await Promise.all([state.spec || api('/spec'),api('/cases'),api('/runs'),api('/evidence'),api('/audit')]);
+    const requests = [state.spec || api('/spec'),api('/cases'),api('/runs'),api('/evidence'),api('/audit'),api('/handovers')];
+    if (state.session.role==='zone_lead') requests.push(api('/rectifications/pending'));
+    const result = await Promise.all(requests);
     if (revision !== key) return;
-    [state.spec,state.cases,state.runs,state.evidence,state.audit]=result;
+    [state.spec,state.cases,state.runs,state.evidence,state.audit,state.handovers,state.pending]=result;
   } catch (error) {
     if (revision !== key) return;
     if (!document.getElementById('message')) app.innerHTML='<main><div id="message" role="alert"></div><button id="retry">重试</button></main>';
@@ -49,7 +51,8 @@ async function refresh() {
   }
   const navigation = Object.keys(pages).map((x,index)=>x==='editor'&&state.session.role!=='operator' ? ''
     : `<a href="#${x}" ${x===page?'aria-current="page"':''}>${esc(topic.modules[index])}</a>`).join('');
-  app.innerHTML=`<header class="masthead"><a class="identity" href="#cases">${esc(topic.name)}</a><div class="user"><span>${esc(roleLabels[state.session.role])}</span><button id="logout" class="secondary">退出</button></div></header>
+  const who = `${esc(roleLabels[state.session.role]||state.session.role)}${state.session.zone?` · ${esc(state.session.zone)}`:''}`;
+  app.innerHTML=`<header class="masthead"><a class="identity" href="#cases">${esc(topic.name)}</a><div class="user"><span>${who}</span><button id="logout" class="secondary">退出</button></div></header>
     <div class="workspace"><nav aria-label="业务模块">${navigation}</nav><main><div id="message" role="alert"></div>${pages[page](state,id)}</main></div>`;
   document.getElementById('logout').addEventListener('click',()=>{setSession(null); void refresh();});
   if (page==='editor') bindEditor(state, api, fail);

@@ -7,7 +7,7 @@ from sqlalchemy import and_, or_, select
 from src.config.settings import cache, engine
 from src.constants.workflow import Status
 from src.models.tables import audit, cases, evidence, runs
-from src.services import domain
+from src.services import domain, handover
 from src.utils.encoding import canonical
 from src.utils.time import utc_time
 
@@ -95,10 +95,12 @@ def review(identity, note, actor):
     if not note:
         raise HTTPException(422, '复核意见不能为空')
     with engine.begin() as conn:
-        found(conn, evidence, identity)
+        row = found(conn, evidence, identity)
         count = conn.execute(evidence.update().where(evidence.c.id == identity, evidence.c.reviewed_at.is_(None))
                             .values(review_note=note, reviewer=actor, reviewed_at=utc_time())).rowcount
         if count != 1:
             raise HTTPException(409, '该证据已经复核')
+        # 签署生效的同一事务内对账整改派单：差异开出、复验撤下、没复验的保留。
+        handover.reconcile_on_review(conn, identity, row['report'], actor)
         log(conn, actor, 'review', identity)
         return found(conn, evidence, identity)

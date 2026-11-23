@@ -29,8 +29,10 @@ def login(username, password):
     if not user or not valid:
         raise HTTPException(401, '账号或密码有误')
     claims = {'sub': user['username'], 'role': user['role'], 'exp': int(time.time()) + 3600 * 8}
+    if user['zone']:
+        claims['zone'] = user['zone']
     return {'token': jwt.encode(claims, AUTH_KEY, algorithm='HS256'),
-            'username': user['username'], 'role': user['role']}
+            'username': user['username'], 'role': user['role'], 'zone': user['zone']}
 
 
 def current_user(token: str = Depends(bearer)):
@@ -50,3 +52,12 @@ def reviewer(user=Depends(current_user)):
     if user['role'] != Role.REVIEWER:
         raise HTTPException(403, '需要复核员权限')
     return user['sub']
+
+
+def zone_lead(user=Depends(current_user)):
+    """区线班长：领单、续传与回执的作用域取自账号绑定的区域，不接受客户端指定。"""
+    if user['role'] != Role.ZONE_LEAD:
+        raise HTTPException(403, '需要区线班长权限')
+    if not user.get('zone'):
+        raise HTTPException(403, '该账号未绑定作业区域')
+    return user

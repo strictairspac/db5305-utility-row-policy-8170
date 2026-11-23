@@ -32,6 +32,9 @@ docker compose up -d --build --wait
 | `operator` | 经办员 | 读取档案、创建实验输入、提交执行、导出结果 |
 | `reviewer` | 复核员 | 读取、导出和签署结果 |
 | `viewer` | 观察员 | 读取、导出已有结果 |
+| `lead-beizha` / `lead-nandi` / `lead-xigang` | 区线班长 | 读取结果，领取并签收本区（北闸/南堤/西港）整改派单 |
+
+复核员签署证据后，差异按工单所属区线生成整改派单；区线班长在差异清单页签收本区待办，复验签署确认差异消失后派单撤下。交接接口：`GET /rectifications/pending` 领本区待办（含续传水位）、`GET /rectifications/feed?since=游标` 增量补交接事件、`POST /rectifications/{派单号}/ack` 按代次回执、`GET /handovers` 查交接状态。规则细节见 [BUSINESS.md](BUSINESS.md)。
 
 `SEED_DEMO=true` 启动时生成账号与一个业务样例。工作台新建档案会预填样例。可编辑表单中的数值、文本和结构化 JSON 后提交。业务说明中的原始文件是上游示例，演示数据通过表单录入。角色枚举位于后端 `src/constants/workflow.py` 与前端 `src/constants/workflow.js`。执行状态枚举也位于这两个文件，使用于队列、列表和执行详情。证据校验码是报告 JSON 按 UTF-8、键排序且省略多余空格序列化后的 SHA-256。
 
